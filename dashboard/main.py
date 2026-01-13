@@ -551,6 +551,68 @@ async def site_console(
         )
 
 
+@app.get("/logs-viewer", response_class=HTMLResponse)
+async def logs_viewer_page(
+    request: Request,
+    stack: str = None,
+    site: str = None,
+    lines: int = 100,
+    user: str = Depends(require_auth)
+):
+    """Logs viewer page"""
+    try:
+        from datetime import datetime
+        
+        # Get all stacks
+        stacks_data = await call_agent("GET", "/stacks")
+        stacks = stacks_data.get("stacks", [])
+        
+        # Get sites for selected stack
+        sites = []
+        if stack:
+            try:
+                stack_data = await call_agent("GET", f"/stacks/{stack}")
+                sites = stack_data.get("sites", [])
+            except:
+                sites = []
+        
+        # Get logs if both stack and site are selected
+        logs = None
+        if stack and site:
+            try:
+                result = await call_agent("GET", f"/site/{stack}/{site}/logs?lines={lines}")
+                if result.get("success"):
+                    logs = result.get("data", {}).get("logs", "")
+            except Exception as e:
+                logger.error(f"Error getting logs: {e}")
+                logs = None
+        
+        return templates.TemplateResponse(
+            "logs_viewer.html",
+            {
+                "request": request,
+                "user": user,
+                "stacks": stacks,
+                "sites": sites,
+                "selected_stack": stack,
+                "selected_site": site,
+                "lines": lines,
+                "logs": logs,
+                "current_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+        )
+    except Exception as e:
+        logger.error(f"Logs viewer page error: {e}")
+        return templates.TemplateResponse(
+            "error.html",
+            {
+                "request": request,
+                "user": user,
+                "error": f"Failed to load logs viewer: {str(e)}"
+            }
+        )
+
+
 @app.get("/scheduler", response_class=HTMLResponse)
 async def scheduler_page(request: Request, user: str = Depends(require_auth)):
     """Scheduler management page"""

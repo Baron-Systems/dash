@@ -165,6 +165,57 @@ def find_site_bench(stack_name: str, site_name: str) -> Path:
     raise FileNotFoundError(f"Site '{site_name}' not found in stack '{stack_name}'")
 
 
+def get_backend_container_name(bench_path: Path) -> str:
+    """Get the actual backend container name for a bench
+    
+    In FM, containers are named based on the bench/project name.
+    We need to find the actual container name dynamically.
+    """
+    # Try to get container name from docker-compose ps
+    success, output, error = run_command(
+        ["docker-compose", "ps", "-q", "backend"],
+        cwd=bench_path
+    )
+    
+    if success and output.strip():
+        # Get container ID
+        container_id = output.strip().split('\n')[0]
+        
+        # Get container name from ID
+        success2, output2, error2 = run_command(
+            ["docker", "inspect", "--format", "{{.Name}}", container_id]
+        )
+        
+        if success2 and output2.strip():
+            # Remove leading / from container name
+            container_name = output2.strip().lstrip('/')
+            logger.info(f"Found backend container: {container_name}")
+            return container_name
+    
+    # Fallback: try common naming patterns
+    bench_name = bench_path.name
+    possible_names = [
+        f"{bench_name}-backend-1",
+        f"{bench_name}_backend_1",
+        f"{bench_name.replace('.', '-')}-backend-1",
+        f"{bench_name.replace('.', '_')}_backend_1",
+        "backend"  # Last resort
+    ]
+    
+    for name in possible_names:
+        # Check if container exists
+        success, output, error = run_command(
+            ["docker", "inspect", name]
+        )
+        if success:
+            logger.info(f"Found backend container using fallback: {name}")
+            return name
+    
+    # Ultimate fallback
+    logger.warning(f"Could not find backend container for bench {bench_name}, using 'backend'")
+    return "backend"
+
+
 def list_sites(stack_name: str) -> List[str]:
     """List all sites in a stack - FM structure aware"""
     stack_path = get_stack_path(stack_name)
@@ -322,6 +373,8 @@ def restart_site(stack_name: str, site_name: str) -> tuple:
         return True, f"Site '{site_name}' restarted successfully"
     except FileNotFoundError as e:
         return False, str(e)
+    except Exception as e:
+        return False, f"Error: {str(e)}"
 
 
 def migrate_site(stack_name: str, site_name: str) -> tuple:
@@ -330,16 +383,19 @@ def migrate_site(stack_name: str, site_name: str) -> tuple:
         # Find the bench that contains this site
         bench_path = find_site_bench(stack_name, site_name)
         
+        # Get the correct backend container name
+        container_name = get_backend_container_name(bench_path)
+        
         # Execute migrate command in the bench directory
         success, output, error = run_command(
-            ["docker", "exec", "-it", "backend", "bench", "--site", site_name, "migrate"],
+            ["docker", "exec", "-it", container_name, "bench", "--site", site_name, "migrate"],
             cwd=bench_path
         )
         
         if not success:
             # Try without -it flag
             success, output, error = run_command(
-                ["docker", "exec", "backend", "bench", "--site", site_name, "migrate"],
+                ["docker", "exec", container_name, "bench", "--site", site_name, "migrate"],
                 cwd=bench_path
             )
         
@@ -349,6 +405,8 @@ def migrate_site(stack_name: str, site_name: str) -> tuple:
         return True, f"Site '{site_name}' migrated successfully"
     except FileNotFoundError as e:
         return False, str(e)
+    except Exception as e:
+        return False, f"Error: {str(e)}"
 
 
 def backup_site(stack_name: str, site_name: str) -> tuple:
@@ -360,9 +418,12 @@ def backup_site(stack_name: str, site_name: str) -> tuple:
         
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         
+        # Get the correct backend container name
+        container_name = get_backend_container_name(bench_path)
+        
         # Execute backup command in the bench directory
         success, output, error = run_command(
-            ["docker", "exec", "backend", "bench", "--site", site_name, "backup"],
+            ["docker", "exec", container_name, "bench", "--site", site_name, "backup"],
             cwd=bench_path
         )
         
@@ -388,6 +449,8 @@ def backup_site(stack_name: str, site_name: str) -> tuple:
         return True, "Backup command executed, but backup file location unknown"
     except FileNotFoundError as e:
         return False, str(e)
+    except Exception as e:
+        return False, f"Error: {str(e)}"
 
 
 def update_stack(stack_name: str) -> tuple:
@@ -421,9 +484,12 @@ def get_site_logs(stack_name: str, site_name: str, lines: int = 100) -> tuple:
         # Find the bench that contains this site
         bench_path = find_site_bench(stack_name, site_name)
         
-        # Get docker logs from backend container in the bench directory
+        # Get the correct backend container name
+        container_name = get_backend_container_name(bench_path)
+        
+        # Get docker logs from backend container
         success, output, error = run_command(
-            ["docker", "logs", "--tail", str(lines), "backend"],
+            ["docker", "logs", "--tail", str(lines), container_name],
             cwd=bench_path
         )
         
@@ -433,6 +499,8 @@ def get_site_logs(stack_name: str, site_name: str, lines: int = 100) -> tuple:
         return True, output
     except FileNotFoundError as e:
         return False, str(e)
+    except Exception as e:
+        return False, f"Error: {str(e)}"
 
 
 def list_site_files(stack_name: str, site_name: str, subpath: str = "") -> tuple:
@@ -473,12 +541,21 @@ def list_site_files(stack_name: str, site_name: str, subpath: str = "") -> tuple
 
 def open_site_console(stack_name: str, site_name: str) -> tuple:
     """Get command to open console for a site"""
-    stack_path = get_stack_path(stack_name)
-    
-    # Return the command that user can execute
-    command = f"docker exec -it backend bench --site {site_name} console"
-    
-    return True, f"Run this command: cd {stack_path} && {command}"
+    try:
+        # Find the bench that contains this site
+        bench_path = find_site_bench(stack_name, site_name)
+        
+        # Get the correct backend container name
+        container_name = get_backend_container_name(bench_path)
+        
+        # Return the command that user can execute
+        command = f"docker exec -it {container_name} bench --site {site_name} console"
+        
+        return True, f"Run this command: cd {bench_path} && {command}"
+    except FileNotFoundError as e:
+        return False, str(e)
+    except Exception as e:
+        return False, f"Error: {str(e)}"
 
 
 # API Endpoints
