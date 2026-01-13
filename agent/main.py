@@ -18,7 +18,29 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Load configuration
-CONFIG_PATH = os.getenv("CONFIG_PATH", "/home/manager-pc/Desktop/dash/config.yaml")
+# Try multiple possible config locations
+CONFIG_PATH = os.getenv("CONFIG_PATH")
+if not CONFIG_PATH:
+    # Try common locations
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    possible_paths = [
+        os.path.join(script_dir, "..", "config.yaml"),
+        "/opt/dash/config.yaml",
+        "/etc/dash/config.yaml",
+        "/home/manager-pc/Desktop/dash/config.yaml"
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            CONFIG_PATH = path
+            break
+    
+    if not CONFIG_PATH or not os.path.exists(CONFIG_PATH):
+        raise FileNotFoundError(
+            "config.yaml not found. Please set CONFIG_PATH environment variable or "
+            "place config.yaml in one of: " + ", ".join(possible_paths)
+        )
+
+logger.info(f"Using config file: {CONFIG_PATH}")
 with open(CONFIG_PATH, "r") as f:
     config = yaml.safe_load(f)
 

@@ -57,7 +57,26 @@ A secure web-based dashboard for managing multiple Frappe stacks (fm + Docker) f
 - Nginx (for production)
 - User account with Docker group access
 
-## 🚀 Installation
+## 🚀 Quick Installation (One Command!)
+
+```bash
+bash install.sh
+```
+
+This will:
+- ✅ Auto-detect Python, Docker, and FM
+- ✅ Auto-discover FM stacks
+- ✅ Generate secure secrets
+- ✅ Create configuration
+- ✅ Install dependencies
+- ✅ Test services
+- ✅ Only asks for username/password
+
+**[Arabic Guide: دليل عربي](README.ar.md)**
+
+---
+
+## 📋 Manual Installation
 
 ### 1. Clone or Download
 

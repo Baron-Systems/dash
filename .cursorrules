@@ -1,0 +1,279 @@
+# FM Dashboard - Cursor AI Rules
+
+## Project Overview
+This is a production-ready web-based dashboard for managing Frappe Manager (FM) stacks. It consists of two services:
+1. **Agent Service** (port 9100) - Executes commands on FM/Docker stacks
+2. **Dashboard Service** (port 8000) - Web UI for management
+
+## Technology Stack
+- **Backend**: FastAPI, Uvicorn, Python 3.8+
+- **Frontend**: Jinja2 templates, HTMX, Tailwind CSS
+- **Scheduler**: APScheduler for automated backups
+- **Infrastructure**: Systemd services, Nginx reverse proxy
+
+## Project Structure
+```
+dash/
+├── agent/main.py              # Agent service (localhost:9100)
+├── dashboard/main.py          # Dashboard service (localhost:8000)
+├── dashboard/templates/       # Jinja2 HTML templates
+├── systemd/                   # Service definitions
+├── nginx/                     # Nginx configuration
+├── scripts/                   # Setup and maintenance scripts
+├── config.yaml               # Main configuration file
+└── requirements.txt          # Python dependencies
+```
+
+## Core Principles & Constraints
+
+### Security (NON-NEGOTIABLE)
+1. **Never** use shell=True in subprocess calls
+2. **Never** expose agent port (9100) to external network - always 127.0.0.1
+3. **Never** run services as root - use regular user with docker group
+4. **Always** validate and whitelist actions before execution
+5. **Always** use token authentication for agent API
+6. **Always** bind services to localhost only (127.0.0.1)
+7. **Never** allow arbitrary command execution - use whitelist only
+
+### Command Execution
+- Use subprocess.run() with list arguments (never string with shell=True)
+- All commands must be in the allowed_actions whitelist in config.yaml
+- Execute FM commands via: `["fm", "command", "args"]`
+- Execute Docker commands via: `["docker", "exec", "container", "bench", ...]`
+- Always use timeout parameter to prevent hanging
+
+### Authentication & Authorization
+- Dashboard uses session-based authentication (SessionMiddleware)
+- Agent requires Bearer token in Authorization header
+- Tokens should be 32+ character random strings
+- Never commit secrets to version control
+
+## Code Style & Conventions
+
+### Python
+- Use FastAPI route decorators with type hints
+- Use Pydantic models for request/response validation
+- Use async/await for I/O operations
+- Log all important actions with logging module
+- Handle exceptions gracefully with try/except
+- Return ActionResponse model from agent actions
+
+### HTML Templates (Jinja2)
+- Extend from `base.html` for all pages
+- Use Tailwind CSS utility classes for styling
+- Use HTMX for dynamic updates (hx-post, hx-get, hx-trigger)
+- Include Font Awesome icons: `<i class="fas fa-icon-name"></i>`
+- Show notifications via JavaScript: `showNotification(message, type)`
+- Use confirmation dialogs for destructive actions
+
+### Configuration
+- All configuration in `config.yaml` (never hardcode)
+- Use environment variables for sensitive overrides
+- Load config at startup, not per-request
+- Validate configuration on startup
+
+## Common Tasks
+
+### Adding a New Action
+1. Add action name to `allowed_actions` in config.yaml
+2. Implement function in agent/main.py (e.g., `def new_action(stack_name: str)`)
+3. Add case in agent's `/action` endpoint
+4. Add UI button in dashboard template with hx-post
+5. Test with confirmation dialog if destructive
+
+### Adding a New Template Page
+1. Create HTML file in `dashboard/templates/`
+2. Extend from `base.html`: `{% extends "base.html" %}`
+3. Add route in dashboard/main.py with `@app.get()` or `@app.post()`
+4. Use `templates.TemplateResponse()` to render
+5. Add navigation link in base.html if needed
+
+### Adding a New Stack
+1. Edit config.yaml under `stacks:` section
+2. Add stack name, path, and type (fm)
+3. Restart services: `sudo systemctl restart fm-agent fm-dashboard`
+4. Verify in UI at /dashboard
+
+### Testing Changes
+1. Test agent: `python3 agent/main.py` (terminal 1)
+2. Test dashboard: `python3 dashboard/main.py` (terminal 2)
+3. Test agent API: `bash scripts/test-agent.sh`
+4. Access UI: http://127.0.0.1:8000
+5. Check logs for errors
+
+## File Paths & Important Locations
+
+### Configuration
+- Main config: `/home/manager-pc/Desktop/dash/config.yaml`
+- Backup directory: `/backups/` (configurable in config.yaml)
+- Stack paths: As configured in config.yaml under `stacks:`
+
+### Logs
+- Agent logs: `sudo journalctl -u fm-agent -f`
+- Dashboard logs: `sudo journalctl -u fm-dashboard -f`
+- Nginx logs: `/var/log/nginx/fm-dashboard-*.log`
+
+### Services
+- Agent service: `/etc/systemd/system/fm-agent.service`
+- Dashboard service: `/etc/systemd/system/fm-dashboard.service`
+- Nginx config: `/etc/nginx/sites-available/fm-dashboard.conf`
+
+## Dependencies & Requirements
+
+### System Requirements
+- Python 3.8+
+- Docker and Docker Compose
+- Frappe Manager (fm) command-line tool
+- User must be in docker group
+- Nginx (for production)
+
+### Python Packages
+All in requirements.txt:
+- fastapi - Web framework
+- uvicorn - ASGI server
+- jinja2 - Templates
+- pydantic - Validation
+- apscheduler - Scheduling
+- httpx - HTTP client
+- pyyaml - Config parsing
+- python-jose - JWT tokens
+- passlib - Password hashing
+
+## API Endpoints Reference
+
+### Agent Service (localhost:9100)
+- `GET /` - Health check
+- `GET /stacks` - List all stacks
+- `GET /stacks/{stack_name}` - Get stack details
+- `GET /stacks/{stack_name}/sites` - List sites
+- `POST /action` - Execute whitelisted action
+- `GET /backups/{stack}/{site}` - List backups
+- `GET /backups/{stack}/{site}/{filename}` - Download backup
+
+### Dashboard Service (localhost:8000)
+- `GET /login` - Login page
+- `POST /login` - Handle login
+- `GET /dashboard` - Main dashboard
+- `GET /stack/{name}` - Stack detail page
+- `POST /stack/{name}/restart` - Restart stack
+- `POST /site/{stack}/{site}/backup` - Backup site
+- `GET /backups/{stack}/{site}` - Backups page
+- `GET /scheduler` - Scheduler page
+- `POST /scheduler/add` - Add scheduled job
+
+## Troubleshooting Guidelines
+
+### Service Won't Start
+1. Check if port is already in use: `sudo netstat -tulpn | grep 8000`
+2. Check permissions: User in docker group?
+3. Check config.yaml exists and is valid
+4. Check logs: `sudo journalctl -u SERVICE_NAME -n 50`
+
+### Agent Returns 401
+1. Verify token in config.yaml matches
+2. Check Authorization header format: `Bearer TOKEN`
+3. Ensure no extra spaces or newlines in token
+
+### Backup Fails
+1. Check backup directory exists and is writable
+2. Verify FM stack path is correct
+3. Check docker exec works: `docker exec backend bench --version`
+4. Check disk space: `df -h`
+
+### UI Not Loading
+1. Check dashboard service is running
+2. Verify nginx is proxying correctly
+3. Check browser console for errors
+4. Verify static assets are loading (Tailwind, HTMX)
+
+## Best Practices When Modifying
+
+### Before Making Changes
+1. Read relevant documentation (README.md, SECURITY.md)
+2. Understand the security implications
+3. Test in development first (manual run, not services)
+4. Backup config.yaml before modifying
+
+### When Adding Features
+1. Maintain security constraints (no SSH, no root, no shell=True)
+2. Add to action whitelist if new command needed
+3. Validate all user inputs
+4. Add error handling and logging
+5. Update documentation
+6. Test thoroughly
+
+### When Debugging
+1. Check service logs first
+2. Test agent independently with curl
+3. Test dashboard independently in browser
+4. Use browser dev tools for frontend issues
+5. Add logging statements if needed
+
+## Documentation
+All documentation is in Markdown files:
+- README.md - Complete guide
+- QUICKSTART.md - Quick setup
+- DEPLOYMENT.md - Production deployment
+- SECURITY.md - Security best practices
+- ARCHITECTURE.md - System architecture
+- INSTALLATION_CHECKLIST.md - Verification
+
+## Important Reminders
+
+### What NOT to Do
+❌ Never expose agent port externally
+❌ Never use shell=True in subprocess
+❌ Never run as root
+❌ Never hardcode credentials
+❌ Never skip input validation
+❌ Never allow arbitrary commands
+❌ Never commit secrets to git
+
+### What TO Do
+✅ Always validate inputs
+✅ Always use whitelisted actions
+✅ Always log important operations
+✅ Always handle errors gracefully
+✅ Always test changes locally first
+✅ Always update documentation
+✅ Always follow security principles
+
+## Quick Commands Reference
+
+```bash
+# Development
+source venv/bin/activate
+python3 agent/main.py          # Start agent
+python3 dashboard/main.py      # Start dashboard
+
+# Testing
+bash scripts/test-agent.sh     # Test agent connectivity
+
+# Production
+sudo systemctl restart fm-agent fm-dashboard
+sudo journalctl -u fm-agent -f
+sudo systemctl status fm-agent fm-dashboard
+
+# Configuration
+nano config.yaml
+sudo systemctl daemon-reload   # After service file changes
+```
+
+## Context for AI Assistance
+When helping with this project:
+1. Prioritize security over convenience
+2. Maintain the localhost-only architecture
+3. Keep the command whitelist approach
+4. Preserve the two-service architecture (agent + dashboard)
+5. Use existing patterns for consistency
+6. Test suggestions thoroughly before recommending
+7. Reference existing documentation when relevant
+8. Consider both development and production scenarios
+
+## Version Info
+- Project: FM Dashboard v1.0.0
+- Python: 3.8+
+- FastAPI: 0.109.0+
+- Created: January 2026
+- License: MIT
+

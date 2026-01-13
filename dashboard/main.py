@@ -23,7 +23,29 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Load configuration
-CONFIG_PATH = os.getenv("CONFIG_PATH", "/home/manager-pc/Desktop/dash/config.yaml")
+# Try multiple possible config locations
+CONFIG_PATH = os.getenv("CONFIG_PATH")
+if not CONFIG_PATH:
+    # Try common locations
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    possible_paths = [
+        os.path.join(script_dir, "..", "config.yaml"),
+        "/opt/dash/config.yaml",
+        "/etc/dash/config.yaml",
+        "/home/manager-pc/Desktop/dash/config.yaml"
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            CONFIG_PATH = path
+            break
+    
+    if not CONFIG_PATH or not os.path.exists(CONFIG_PATH):
+        raise FileNotFoundError(
+            "config.yaml not found. Please set CONFIG_PATH environment variable or "
+            "place config.yaml in one of: " + ", ".join(possible_paths)
+        )
+
+logger.info(f"Using config file: {CONFIG_PATH}")
 with open(CONFIG_PATH, "r") as f:
     config = yaml.safe_load(f)
 
@@ -40,8 +62,13 @@ app.add_middleware(
     secret_key=DASHBOARD_CONFIG["secret_key"]
 )
 
-# Templates
-templates = Jinja2Templates(directory="/home/manager-pc/Desktop/dash/dashboard/templates")
+# Templates - use relative path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+templates_dir = os.path.join(script_dir, "templates")
+if not os.path.exists(templates_dir):
+    raise FileNotFoundError(f"Templates directory not found at: {templates_dir}")
+logger.info(f"Using templates directory: {templates_dir}")
+templates = Jinja2Templates(directory=templates_dir)
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
