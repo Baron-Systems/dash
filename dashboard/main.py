@@ -239,7 +239,9 @@ async def stack_detail(request: Request, stack_name: str, user: str = Depends(re
             {
                 "request": request,
                 "user": user,
-                "stack": stack_data
+                "stack": stack_data,
+                "sites": stack_data.get("sites", []),
+                "stack_name": stack_name
             }
         )
     except Exception as e:
@@ -252,6 +254,27 @@ async def stack_detail(request: Request, stack_name: str, user: str = Depends(re
                 "error": f"Failed to load stack: {str(e)}"
             }
         )
+
+
+@app.get("/stack/{stack_name}/refresh-sites", response_class=HTMLResponse)
+async def refresh_sites(request: Request, stack_name: str, user: str = Depends(require_auth)):
+    """Refresh sites list for a stack"""
+    try:
+        # Get updated sites list from agent
+        stack_data = await call_agent("GET", f"/stacks/{stack_name}")
+        sites = stack_data.get("sites", [])
+        
+        return templates.TemplateResponse(
+            "sites_list_partial.html",
+            {
+                "request": request,
+                "sites": sites,
+                "stack_name": stack_name
+            }
+        )
+    except Exception as e:
+        logger.error(f"Refresh sites error: {e}")
+        return f'<div class="text-red-600 p-4"><i class="fas fa-exclamation-triangle mr-2"></i>Failed to refresh sites: {str(e)}</div>'
 
 
 @app.post("/stack/{stack_name}/restart")
@@ -422,6 +445,110 @@ async def download_backup(
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/site/{stack_name}/{site_name}/logs", response_class=HTMLResponse)
+async def site_logs(
+    request: Request,
+    stack_name: str,
+    site_name: str,
+    user: str = Depends(require_auth)
+):
+    """Site logs page"""
+    try:
+        # Get logs from agent
+        result = await call_agent("GET", f"/site/{stack_name}/{site_name}/logs")
+        
+        return templates.TemplateResponse(
+            "site_logs.html",
+            {
+                "request": request,
+                "user": user,
+                "stack_name": stack_name,
+                "site_name": site_name,
+                "logs": result.get("data", {}).get("logs", "No logs available")
+            }
+        )
+    except Exception as e:
+        logger.error(f"Site logs error: {e}")
+        return templates.TemplateResponse(
+            "error.html",
+            {
+                "request": request,
+                "user": user,
+                "error": f"Failed to load logs: {str(e)}"
+            }
+        )
+
+
+@app.get("/site/{stack_name}/{site_name}/files", response_class=HTMLResponse)
+async def site_files(
+    request: Request,
+    stack_name: str,
+    site_name: str,
+    path: str = "",
+    user: str = Depends(require_auth)
+):
+    """Site files browser page"""
+    try:
+        # Get files from agent
+        result = await call_agent("GET", f"/site/{stack_name}/{site_name}/files?path={path}")
+        
+        return templates.TemplateResponse(
+            "site_files.html",
+            {
+                "request": request,
+                "user": user,
+                "stack_name": stack_name,
+                "site_name": site_name,
+                "current_path": path,
+                "files_data": result.get("data", {})
+            }
+        )
+    except Exception as e:
+        logger.error(f"Site files error: {e}")
+        return templates.TemplateResponse(
+            "error.html",
+            {
+                "request": request,
+                "user": user,
+                "error": f"Failed to load files: {str(e)}"
+            }
+        )
+
+
+@app.get("/site/{stack_name}/{site_name}/console", response_class=HTMLResponse)
+async def site_console(
+    request: Request,
+    stack_name: str,
+    site_name: str,
+    user: str = Depends(require_auth)
+):
+    """Site console page"""
+    try:
+        # Get console command from agent
+        result = await call_agent("GET", f"/site/{stack_name}/{site_name}/console")
+        
+        return templates.TemplateResponse(
+            "site_console.html",
+            {
+                "request": request,
+                "user": user,
+                "stack_name": stack_name,
+                "site_name": site_name,
+                "console_command": result.get("message", "")
+            }
+        )
+    except Exception as e:
+        logger.error(f"Site console error: {e}")
+        return templates.TemplateResponse(
+            "error.html",
+            {
+                "request": request,
+                "user": user,
+                "error": f"Failed to load console: {str(e)}"
+            }
+        )
 
 
 @app.get("/scheduler", response_class=HTMLResponse)

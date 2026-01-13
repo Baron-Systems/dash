@@ -3,6 +3,7 @@ Bench/FM Agent Service
 Executes allowed actions on FM/Docker stacks
 """
 import os
+import re
 import subprocess
 import logging
 from pathlib import Path
@@ -136,29 +137,96 @@ def get_backup_path(stack_name: str, site_name: str) -> Path:
 
 
 # Agent Actions
+def find_site_bench(stack_name: str, site_name: str) -> Path:
+    """Find the bench directory that contains a specific site
+    
+    Returns the bench container path (e.g., /stack/sites/devsite.mby-solution.vip)
+    where the site's workspace/frappe-bench/sites/{site_name} exists
+    """
+    stack_path = get_stack_path(stack_name)
+    sites_dir = stack_path / "sites"
+    
+    if sites_dir.exists() and sites_dir.is_dir():
+        for bench_dir in sites_dir.iterdir():
+            if not bench_dir.is_dir():
+                continue
+            
+            # Check if site exists in this bench
+            site_path = bench_dir / "workspace" / "frappe-bench" / "sites" / site_name
+            if site_path.exists() and site_path.is_dir():
+                logger.info(f"Found site '{site_name}' in bench '{bench_dir.name}'")
+                return bench_dir
+    
+    # If not found in FM structure, assume site name is also bench name (fallback)
+    fallback = sites_dir / site_name
+    if fallback.exists():
+        return fallback
+    
+    raise FileNotFoundError(f"Site '{site_name}' not found in stack '{stack_name}'")
+
+
 def list_sites(stack_name: str) -> List[str]:
-    """List all sites in a stack"""
+    """List all sites in a stack - FM structure aware"""
     stack_path = get_stack_path(stack_name)
     
-    # Try using fm command
+    # FM Structure: stack/sites/{bench-name}/workspace/frappe-bench/sites/{actual-sites}
+    # We need to find all actual Frappe sites across all benches
+    
+    all_sites = set()  # Use set to avoid duplicates
+    
+    # Method 1: Scan FM structure (sites/{bench}/workspace/frappe-bench/sites/)
+    sites_dir = stack_path / "sites"
+    if sites_dir.exists() and sites_dir.is_dir():
+        # Iterate through each bench container
+        for bench_dir in sites_dir.iterdir():
+            if not bench_dir.is_dir():
+                continue
+            
+            # Check for workspace/frappe-bench/sites inside each bench
+            frappe_sites_dir = bench_dir / "workspace" / "frappe-bench" / "sites"
+            if frappe_sites_dir.exists() and frappe_sites_dir.is_dir():
+                # List actual sites in this bench
+                for site_dir in frappe_sites_dir.iterdir():
+                    if site_dir.is_dir() and site_dir.name not in ["assets", "common_site_config.json", "apps"]:
+                        all_sites.add(site_dir.name)
+                        logger.info(f"Found site in bench '{bench_dir.name}': {site_dir.name}")
+    
+    if all_sites:
+        return sorted(list(all_sites))
+    
+    # Method 2: Try using fm command as fallback
     success, output, error = run_command(["fm", "list"], cwd=stack_path)
     
-    if success:
-        # Parse fm list output
+    if success and output:
         sites = []
         for line in output.strip().split("\n"):
-            if line.strip() and not line.startswith("─") and not line.startswith("Site"):
-                parts = line.split()
-                if parts:
-                    sites.append(parts[0])
-        return sites
+            # Look for lines containing /sites/ in path
+            if '/sites/' in line:
+                try:
+                    # Extract site name from path
+                    # Example: /home/baron/frappe/sites/devsite.mby-solution.vip
+                    parts = line.split('/sites/')
+                    if len(parts) > 1:
+                        site_part = parts[-1].strip()
+                        # Get the last component (actual site name)
+                        site_name = site_part.split('/')[-1].split()[0].rstrip('│').rstrip()
+                        if site_name and '.' in site_name:
+                            sites.append(site_name)
+                            logger.info(f"Found site from fm list: {site_name}")
+                except Exception as e:
+                    logger.debug(f"Error parsing fm list line: {e}")
+                    continue
+        
+        if sites:
+            return sorted(list(set(sites)))  # Remove duplicates
     
-    # Fallback: check sites directory
-    sites_dir = stack_path / "workspace" / "frappe-bench" / "sites"
-    if sites_dir.exists():
-        sites = [d.name for d in sites_dir.iterdir() 
-                if d.is_dir() and d.name not in ["assets", "common_site_config.json"]]
-        return sites
+    # Method 3: Fallback to old structure (for compatibility)
+    workspace_sites = stack_path / "workspace" / "frappe-bench" / "sites"
+    if workspace_sites.exists() and workspace_sites.is_dir():
+        sites = [d.name for d in workspace_sites.iterdir() 
+                if d.is_dir() and d.name not in ["assets", "common_site_config.json", "apps"]]
+        if sites:
+            return sites
     
     return []
 
@@ -197,94 +265,129 @@ def get_stack_status(stack_name: str) -> Dict:
 
 
 def restart_stack(stack_name: str) -> tuple:
-    """Restart an FM stack"""
+    """Restart an FM stack (all benches)"""
     stack_path = get_stack_path(stack_name)
     
-    # Stop
-    success, output, error = run_command(["fm", "stop"], cwd=stack_path)
-    if not success:
-        return False, f"Failed to stop stack: {error}"
+    # For FM, we restart all benches in the stack
+    sites_dir = stack_path / "sites"
+    if not sites_dir.exists():
+        return False, "No benches found in stack"
     
-    # Start
-    success, output, error = run_command(["fm", "start"], cwd=stack_path)
-    if not success:
-        return False, f"Failed to start stack: {error}"
+    benches = [d for d in sites_dir.iterdir() if d.is_dir()]
+    if not benches:
+        return False, "No benches found in stack"
     
-    return True, "Stack restarted successfully"
+    failed = []
+    for bench_dir in benches:
+        bench_name = bench_dir.name
+        
+        # Stop bench using docker-compose
+        success, output, error = run_command(
+            ["docker-compose", "down"],
+            cwd=bench_dir
+        )
+        if not success:
+            failed.append(f"{bench_name} (stop failed)")
+            continue
+        
+        # Start bench using docker-compose
+        success, output, error = run_command(
+            ["docker-compose", "up", "-d"],
+            cwd=bench_dir
+        )
+        if not success:
+            failed.append(f"{bench_name} (start failed)")
+    
+    if failed:
+        return False, f"Failed to restart benches: {', '.join(failed)}"
+    
+    return True, f"Stack restarted successfully ({len(benches)} benches)"
 
 
 def restart_site(stack_name: str, site_name: str) -> tuple:
     """Restart a specific site"""
-    stack_path = get_stack_path(stack_name)
-    
-    # Restart using docker-compose
-    success, output, error = run_command(
-        ["docker-compose", "restart", "backend"],
-        cwd=stack_path
-    )
-    
-    if not success:
-        return False, f"Failed to restart site: {error}"
-    
-    return True, f"Site '{site_name}' restarted successfully"
+    try:
+        # Find the bench that contains this site
+        bench_path = find_site_bench(stack_name, site_name)
+        
+        # Restart using docker-compose in the bench directory
+        success, output, error = run_command(
+            ["docker-compose", "restart", "backend"],
+            cwd=bench_path
+        )
+        
+        if not success:
+            return False, f"Failed to restart site: {error}"
+        
+        return True, f"Site '{site_name}' restarted successfully"
+    except FileNotFoundError as e:
+        return False, str(e)
 
 
 def migrate_site(stack_name: str, site_name: str) -> tuple:
     """Run migrate on a site"""
-    stack_path = get_stack_path(stack_name)
-    
-    # Execute migrate command
-    success, output, error = run_command(
-        ["docker", "exec", "-it", "backend", "bench", "--site", site_name, "migrate"],
-        cwd=stack_path
-    )
-    
-    if not success:
-        # Try without -it flag
+    try:
+        # Find the bench that contains this site
+        bench_path = find_site_bench(stack_name, site_name)
+        
+        # Execute migrate command in the bench directory
         success, output, error = run_command(
-            ["docker", "exec", "backend", "bench", "--site", site_name, "migrate"],
-            cwd=stack_path
+            ["docker", "exec", "-it", "backend", "bench", "--site", site_name, "migrate"],
+            cwd=bench_path
         )
-    
-    if not success:
-        return False, f"Failed to migrate site: {error}"
-    
-    return True, f"Site '{site_name}' migrated successfully"
+        
+        if not success:
+            # Try without -it flag
+            success, output, error = run_command(
+                ["docker", "exec", "backend", "bench", "--site", site_name, "migrate"],
+                cwd=bench_path
+            )
+        
+        if not success:
+            return False, f"Failed to migrate site: {error}"
+        
+        return True, f"Site '{site_name}' migrated successfully"
+    except FileNotFoundError as e:
+        return False, str(e)
 
 
 def backup_site(stack_name: str, site_name: str) -> tuple:
     """Backup a site"""
-    stack_path = get_stack_path(stack_name)
-    backup_dir = get_backup_path(stack_name, site_name)
-    
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    
-    # Execute backup command
-    success, output, error = run_command(
-        ["docker", "exec", "backend", "bench", "--site", site_name, "backup"],
-        cwd=stack_path
-    )
-    
-    if not success:
-        return False, f"Failed to backup site: {error}"
-    
-    # Find the backup files (they're created in sites/<site>/private/backups/)
-    source_backup_dir = stack_path / "workspace" / "frappe-bench" / "sites" / site_name / "private" / "backups"
-    
-    if source_backup_dir.exists():
-        # Find the latest backup files
-        backup_files = sorted(source_backup_dir.glob("*.sql.gz"), key=lambda x: x.stat().st_mtime, reverse=True)
+    try:
+        # Find the bench that contains this site
+        bench_path = find_site_bench(stack_name, site_name)
+        backup_dir = get_backup_path(stack_name, site_name)
         
-        if backup_files:
-            latest_backup = backup_files[0]
-            # Copy to our backup directory
-            import shutil
-            dest_file = backup_dir / f"{timestamp}.sql.gz"
-            shutil.copy2(latest_backup, dest_file)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        
+        # Execute backup command in the bench directory
+        success, output, error = run_command(
+            ["docker", "exec", "backend", "bench", "--site", site_name, "backup"],
+            cwd=bench_path
+        )
+        
+        if not success:
+            return False, f"Failed to backup site: {error}"
+        
+        # Find the backup files in the correct bench workspace
+        source_backup_dir = bench_path / "workspace" / "frappe-bench" / "sites" / site_name / "private" / "backups"
+        
+        if source_backup_dir.exists():
+            # Find the latest backup files
+            backup_files = sorted(source_backup_dir.glob("*.sql.gz"), key=lambda x: x.stat().st_mtime, reverse=True)
             
-            return True, f"Site '{site_name}' backed up successfully to {dest_file}"
-    
-    return True, "Backup command executed, but backup file location unknown"
+            if backup_files:
+                latest_backup = backup_files[0]
+                # Copy to our backup directory
+                import shutil
+                dest_file = backup_dir / f"{timestamp}.sql.gz"
+                shutil.copy2(latest_backup, dest_file)
+                
+                return True, f"Site '{site_name}' backed up successfully to {dest_file}"
+        
+        return True, "Backup command executed, but backup file location unknown"
+    except FileNotFoundError as e:
+        return False, str(e)
 
 
 def update_stack(stack_name: str) -> tuple:
@@ -310,6 +413,72 @@ def update_stack(stack_name: str) -> tuple:
         return False, f"Failed to restart with new images: {error}"
     
     return True, "Stack updated successfully"
+
+
+def get_site_logs(stack_name: str, site_name: str, lines: int = 100) -> tuple:
+    """Get logs for a site"""
+    try:
+        # Find the bench that contains this site
+        bench_path = find_site_bench(stack_name, site_name)
+        
+        # Get docker logs from backend container in the bench directory
+        success, output, error = run_command(
+            ["docker", "logs", "--tail", str(lines), "backend"],
+            cwd=bench_path
+        )
+        
+        if not success:
+            return False, f"Failed to get logs: {error}"
+        
+        return True, output
+    except FileNotFoundError as e:
+        return False, str(e)
+
+
+def list_site_files(stack_name: str, site_name: str, subpath: str = "") -> tuple:
+    """List files in a site directory"""
+    try:
+        # Find the bench that contains this site
+        bench_path = find_site_bench(stack_name, site_name)
+        
+        # Build the site directory path in the correct bench
+        site_dir = bench_path / "workspace" / "frappe-bench" / "sites" / site_name
+        
+        if not site_dir.exists():
+            return False, f"Site directory not found at {site_dir}"
+        
+        # If subpath provided, append it
+        if subpath:
+            site_dir = site_dir / subpath
+            if not site_dir.exists():
+                return False, f"Path not found: {subpath}"
+        
+        # List files and directories
+        try:
+            items = []
+            for item in sorted(site_dir.iterdir()):
+                items.append({
+                    "name": item.name,
+                    "type": "dir" if item.is_dir() else "file",
+                    "size": item.stat().st_size if item.is_file() else 0,
+                    "modified": datetime.fromtimestamp(item.stat().st_mtime).isoformat()
+                })
+            
+            return True, {"path": str(site_dir), "items": items}
+        except Exception as e:
+            return False, f"Failed to list files: {str(e)}"
+    except FileNotFoundError as e:
+        return False, str(e)
+
+
+def open_site_console(stack_name: str, site_name: str) -> tuple:
+    """Get command to open console for a site"""
+    stack_path = get_stack_path(stack_name)
+    
+    # Return the command that user can execute
+    command = f"docker exec -it backend bench --site {site_name} console"
+    
+    return True, f"Run this command: cd {stack_path} && {command}"
 
 
 # API Endpoints
@@ -460,6 +629,45 @@ def download_backup(stack_name: str, site_name: str, filename: str):
             media_type="application/gzip"
         )
     
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/site/{stack_name}/{site_name}/logs", dependencies=[Depends(verify_token)])
+def get_logs(stack_name: str, site_name: str, lines: int = 100):
+    """Get site logs"""
+    try:
+        success, message = get_site_logs(stack_name, site_name, lines)
+        return ActionResponse(success=success, message=message if not success else "", data={"logs": message if success else ""})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/site/{stack_name}/{site_name}/files", dependencies=[Depends(verify_token)])
+def list_files(stack_name: str, site_name: str, path: str = ""):
+    """List files in site directory"""
+    try:
+        success, result = list_site_files(stack_name, site_name, path)
+        if success:
+            return ActionResponse(success=True, message="Files retrieved", data=result)
+        else:
+            return ActionResponse(success=False, message=result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/site/{stack_name}/{site_name}/console", dependencies=[Depends(verify_token)])
+def get_console_command(stack_name: str, site_name: str):
+    """Get console command for site"""
+    try:
+        success, command = open_site_console(stack_name, site_name)
+        return ActionResponse(success=success, message=command)
     except HTTPException:
         raise
     except Exception as e:
