@@ -20,6 +20,22 @@ NC='\033[0m' # No Color
 # Get current directory
 INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo -e "${BLUE}📂 Installation directory: $INSTALL_DIR${NC}"
+
+# Check and fix permissions if needed
+CURRENT_USER=$(whoami)
+CURRENT_GROUP=$(id -gn)
+DIR_OWNER=$(stat -c '%U' "$INSTALL_DIR" 2>/dev/null || echo "")
+
+if [ "$DIR_OWNER" != "$CURRENT_USER" ] && [ "$DIR_OWNER" != "" ]; then
+    echo -e "${YELLOW}⚠ Directory owned by $DIR_OWNER, fixing permissions...${NC}"
+    if sudo chown -R $CURRENT_USER:$CURRENT_GROUP "$INSTALL_DIR" 2>/dev/null; then
+        echo -e "${GREEN}   ✓ Permissions fixed${NC}"
+    else
+        echo -e "${RED}   ✗ Failed to fix permissions${NC}"
+        echo -e "${YELLOW}   Run manually: sudo chown -R $CURRENT_USER:$CURRENT_GROUP $INSTALL_DIR${NC}"
+    fi
+fi
+
 echo ""
 
 # 1. Check Prerequisites
@@ -145,6 +161,27 @@ echo ""
 echo -e "${BLUE}📦 Setting up Python environment...${NC}"
 
 cd "$INSTALL_DIR"
+
+# Check if we can write to the directory
+if [ ! -w "$INSTALL_DIR" ]; then
+    echo -e "${YELLOW}⚠ Cannot write to $INSTALL_DIR, fixing permissions...${NC}"
+    if sudo chown -R $CURRENT_USER:$CURRENT_GROUP "$INSTALL_DIR" 2>/dev/null; then
+        echo -e "${GREEN}   ✓ Permissions fixed${NC}"
+    else
+        echo -e "${RED}   ✗ Failed to fix permissions${NC}"
+        echo -e "${YELLOW}   Run manually: sudo chown -R $CURRENT_USER:$CURRENT_GROUP $INSTALL_DIR${NC}"
+        exit 1
+    fi
+fi
+
+# Remove existing venv if owned by wrong user
+if [ -d "venv" ]; then
+    VENV_OWNER=$(stat -c '%U' "venv" 2>/dev/null || echo "")
+    if [ "$VENV_OWNER" != "$CURRENT_USER" ] && [ "$VENV_OWNER" != "" ]; then
+        echo -e "${YELLOW}   ⚠ Removing venv owned by $VENV_OWNER...${NC}"
+        rm -rf venv
+    fi
+fi
 
 if [ ! -d "venv" ]; then
     python3 -m venv venv
