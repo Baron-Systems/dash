@@ -1,41 +1,61 @@
 {% for site in sites %}
 <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
     <div class="flex items-center justify-between mb-3">
-        <h3 class="text-lg font-semibold text-gray-800">
-            <i class="fas fa-globe text-blue-600 mr-2"></i>{{ site }}
-        </h3>
+        <div>
+            <h3 class="text-lg font-semibold text-gray-800">
+                <i class="fas fa-globe text-blue-600 mr-2"></i>
+                {% if site is mapping %}
+                    {{ site.name }}
+                {% else %}
+                    {{ site }}
+                {% endif %}
+            </h3>
+            {% if site is mapping %}
+            <div class="flex items-center gap-4 mt-2 text-sm text-gray-600">
+                <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
+                    {% if site.status == 'Active' %}bg-green-100 text-green-800
+                    {% else %}bg-red-100 text-red-800{% endif %}">
+                    {{ site.status }}
+                </span>
+                <span class="font-mono text-xs">
+                    <i class="fas fa-folder mr-1"></i>{{ site.path }}
+                </span>
+            </div>
+            {% endif %}
+        </div>
     </div>
     
+    {% set site_name = site.name if site is mapping else site %}
     <div class="flex flex-wrap gap-2">
-        <button hx-post="/site/{{ stack_name }}/{{ site }}/restart" 
+        <button hx-post="/site/{{ stack_name }}/{{ site_name }}/restart" 
                 hx-trigger="click"
                 class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
             <i class="fas fa-redo mr-1"></i>Restart
         </button>
-        <button hx-post="/site/{{ stack_name }}/{{ site }}/migrate" 
+        <button hx-post="/site/{{ stack_name }}/{{ site_name }}/migrate" 
                 hx-trigger="click"
-                onclick="return confirmAction(event, 'Run migrations on {{ site }}?')"
+                onclick="return confirmAction(event, 'Run migrations on {{ site_name }}?')"
                 class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
             <i class="fas fa-database mr-1"></i>Migrate
         </button>
-        <button hx-post="/site/{{ stack_name }}/{{ site }}/backup" 
+        <button hx-post="/site/{{ stack_name }}/{{ site_name }}/backup" 
                 hx-trigger="click"
                 class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
             <i class="fas fa-save mr-1"></i>Backup Now
         </button>
-        <a href="/backups/{{ stack_name }}/{{ site }}" 
+        <a href="/backups/{{ stack_name }}/{{ site_name }}" 
            class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
             <i class="fas fa-folder-open mr-1"></i>View Backups
         </a>
-        <a href="/site/{{ stack_name }}/{{ site }}/logs" 
+        <a href="/site/{{ stack_name }}/{{ site_name }}/logs" 
            class="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
             <i class="fas fa-file-alt mr-1"></i>Logs
         </a>
-        <a href="/site/{{ stack_name }}/{{ site }}/files" 
+        <a href="/site/{{ stack_name }}/{{ site_name }}/files" 
            class="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
             <i class="fas fa-folder mr-1"></i>Files
         </a>
-        <a href="/site/{{ stack_name }}/{{ site }}/console" 
+        <a href="/site/{{ stack_name }}/{{ site_name }}/console" 
            class="bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
             <i class="fas fa-terminal mr-1"></i>Console
         </a>

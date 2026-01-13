@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+
+{% block title %}System Logs - FM Dashboard{% endblock %}
+
+{% block content %}
+<div class="px-4 py-6 sm:px-0">
+    <!-- Header -->
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold text-gray-900">
+            <i class="fas fa-server mr-3"></i>System Logs
+        </h1>
+        <p class="mt-2 text-gray-600">View logs for Dashboard and Agent services</p>
+    </div>
+    
+    <!-- Service Selection -->
+    <div class="bg-white shadow-lg rounded-lg p-6 mb-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">
+            <i class="fas fa-filter mr-2"></i>Select Service
+        </h2>
+        
+        <form method="GET" action="/system-logs" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Service Selection -->
+                <div>
+                    <label for="service" class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-cog mr-1"></i>Service
+                    </label>
+                    <select name="service" id="service" 
+                            onchange="this.form.submit()"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="dashboard" {% if service == "dashboard" %}selected{% endif %}>
+                            📊 Dashboard Service
+                        </option>
+                        <option value="agent" {% if service == "agent" %}selected{% endif %}>
+                            ⚙️ Agent Service
+                        </option>
+                    </select>
+                </div>
+                
+                <!-- Lines Selection -->
+                <div>
+                    <label for="lines" class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-list-ol mr-1"></i>Lines
+                    </label>
+                    <select name="lines" id="lines" 
+                            onchange="this.form.submit()"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="50" {% if lines == 50 %}selected{% endif %}>50</option>
+                        <option value="100" {% if lines == 100 %}selected{% endif %}>100</option>
+                        <option value="200" {% if lines == 200 %}selected{% endif %}>200</option>
+                        <option value="500" {% if lines == 500 %}selected{% endif %}>500</option>
+                        <option value="1000" {% if lines == 1000 %}selected{% endif %}>1000</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="flex gap-2">
+                <button type="submit" 
+                        class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg font-medium transition-colors">
+                    <i class="fas fa-sync-alt mr-2"></i>Refresh Logs
+                </button>
+                <button type="button" 
+                        onclick="autoRefresh()"
+                        id="autoRefreshBtn"
+                        class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg font-medium transition-colors">
+                    <i class="fas fa-play mr-2"></i>Auto Refresh (OFF)
+                </button>
+                <a href="/logs-viewer" 
+                   class="bg-purple-500 hover:bg-purple-600 text-white px-6 py-2 rounded-lg font-medium transition-colors inline-flex items-center">
+                    <i class="fas fa-globe mr-2"></i>Site Logs
+                </a>
+            </div>
+        </form>
+    </div>
+    
+    <!-- Service Info -->
+    <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6 rounded-lg">
+        <div class="flex items-center">
+            <i class="fas fa-info-circle text-blue-600 text-2xl mr-3"></i>
+            <div>
+                <h3 class="text-lg font-semibold text-blue-800">
+                    {% if service == "dashboard" %}
+                        📊 Dashboard Service Logs
+                    {% else %}
+                        ⚙️ Agent Service Logs
+                    {% endif %}
+                </h3>
+                <p class="text-blue-700 mt-1">
+                    Source: <span class="font-mono text-sm">{{ source }}</span> | 
+                    Showing last {{ lines }} lines
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Logs Display -->
+    {% if logs %}
+    <div class="bg-gray-900 shadow-lg rounded-lg p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-white">
+                <i class="fas fa-terminal mr-2"></i>Service Logs
+            </h2>
+            <div class="flex items-center gap-2">
+                <span class="text-white text-sm">
+                    <i class="fas fa-clock mr-1"></i>
+                    Last updated: <span id="lastUpdate">{{ current_time }}</span>
+                </span>
+                <button onclick="downloadLogs()" 
+                        class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
+                    <i class="fas fa-download mr-1"></i>Download
+                </button>
+            </div>
+        </div>
+        
+        <div class="bg-black rounded p-4 overflow-x-auto" style="max-height: 600px; overflow-y: auto;">
+            <pre id="logsContent" class="text-green-400 text-sm font-mono whitespace-pre-wrap">{{ logs }}</pre>
+        </div>
+        
+        <!-- Logs Stats -->
+        <div class="mt-4 flex justify-between items-center text-white text-sm">
+            <div>
+                <i class="fas fa-info-circle mr-1"></i>
+                Showing last {{ lines }} lines from {{ source }}
+            </div>
+            <div>
+                <i class="fas fa-server mr-1"></i>
+                Service: <span class="font-semibold">{{ service|title }}</span>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="bg-yellow-50 border-l-4 border-yellow-500 p-6 rounded-lg">
+        <div class="flex items-center">
+            <i class="fas fa-exclamation-triangle text-yellow-600 text-2xl mr-3"></i>
+            <div>
+                <h3 class="text-lg font-semibold text-yellow-800">No Logs Available</h3>
+                <p class="text-yellow-700 mt-1">
+                    No logs found for {{ service }} service. 
+                    {% if source == "none" %}
+                        The service might not be running as a systemd service, or log files are not accessible.
+                    {% else %}
+                        Try checking systemd logs manually: <code class="bg-yellow-100 px-2 py-1 rounded">journalctl -u fm-{{ service }}</code>
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Quick Actions -->
+    <div class="bg-white shadow-lg rounded-lg p-6 mt-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">
+            <i class="fas fa-tools mr-2"></i>Quick Actions
+        </h2>
+        <div class="flex flex-wrap gap-2">
+            <a href="/dashboard" 
+               class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
+                <i class="fas fa-home mr-1"></i>Dashboard
+            </a>
+            <a href="/logs-viewer" 
+               class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
+                <i class="fas fa-globe mr-1"></i>Site Logs
+            </a>
+            <a href="/scheduler" 
+               class="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
+                <i class="fas fa-clock mr-1"></i>Scheduler
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+let autoRefreshInterval = null;
+let isAutoRefresh = false;
+
+function autoRefresh() {
+    const btn = document.getElementById('autoRefreshBtn');
+    
+    if (isAutoRefresh) {
+        // Stop auto refresh
+        clearInterval(autoRefreshInterval);
+        isAutoRefresh = false;
+        btn.innerHTML = '<i class="fas fa-play mr-2"></i>Auto Refresh (OFF)';
+        btn.classList.remove('bg-red-500', 'hover:bg-red-600');
+        btn.classList.add('bg-green-500', 'hover:bg-green-600');
+    } else {
+        // Start auto refresh
+        isAutoRefresh = true;
+        btn.innerHTML = '<i class="fas fa-stop mr-2"></i>Auto Refresh (ON)';
+        btn.classList.remove('bg-green-500', 'hover:bg-green-600');
+        btn.classList.add('bg-red-500', 'hover:bg-red-600');
+        
+        autoRefreshInterval = setInterval(() => {
+            location.reload();
+        }, 5000); // Refresh every 5 seconds
+    }
+}
+
+function downloadLogs() {
+    const logs = document.getElementById('logsContent').innerText;
+    const blob = new Blob([logs], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `{{ service }}-logs-{{ current_time|replace(' ', '_')|replace(':', '-') }}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    showNotification('Logs downloaded successfully!', 'success');
+}
+
+// Auto-scroll to bottom
+{% if logs %}
+window.addEventListener('load', function() {
+    const logsDiv = document.querySelector('.bg-black');
+    if (logsDiv) {
+        logsDiv.scrollTop = logsDiv.scrollHeight;
+    }
+});
+{% endif %}
+</script>
+{% endblock %}
+

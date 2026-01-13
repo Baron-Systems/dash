@@ -9,14 +9,23 @@ A secure web-based dashboard for managing multiple Frappe stacks (fm + Docker) f
 ## 🎯 Features
 
 ### Stack & Site Management
-- ✅ Auto-discover and manage FM stacks
-- ✅ View stack status and Docker containers
+- ✅ Auto-discover and manage FM stacks using `fm list`
+- ✅ View stack status with Active/Inactive indicators
+- ✅ Display site paths from FM structure
 - ✅ Restart stacks and individual sites
-- ✅ Run site migrations
+- ✅ Run site migrations using `fm shell`
 - ✅ Update stacks (pull latest images)
+- ✅ Refresh sites list dynamically
+
+### Site Operations
+- ✅ **Site Logs** - View real-time logs using `fm logs`
+- ✅ **File Browser** - Browse and edit site files
+- ✅ **Console Access** - Get `fm shell` commands
+- ✅ **Site Status** - Active/Inactive from `fm list`
+- ✅ **Site Path** - Full path display
 
 ### Backup System
-- ✅ Manual backup creation via UI
+- ✅ Manual backup creation via UI using `fm shell`
 - ✅ Download backups directly from browser
 - ✅ Organized backup storage
 - ✅ Automatic backup retention
@@ -26,6 +35,13 @@ A secure web-based dashboard for managing multiple Frappe stacks (fm + Docker) f
 - ✅ Configurable backup times
 - ✅ Persistent job storage
 - ✅ View upcoming backup schedules
+
+### System Logs
+- ✅ **Dashboard Logs** - View dashboard service logs
+- ✅ **Agent Logs** - View agent service logs
+- ✅ Real-time log viewing
+- ✅ Auto-refresh capability
+- ✅ Download logs as text files
 
 ### Security
 - ✅ Login authentication system
@@ -46,7 +62,9 @@ A secure web-based dashboard for managing multiple Frappe stacks (fm + Docker) f
        ↓
 [ Agent Service (Port 9100, localhost-only) ]
        ↓
-[ FM / Docker / Filesystem ]
+[ FM Commands (fm shell, fm logs, fm list) ]
+       ↓
+[ Frappe Stacks / Docker / Filesystem ]
 ```
 
 ## 📋 Prerequisites
@@ -65,7 +83,7 @@ bash install.sh
 
 This will:
 - ✅ Auto-detect Python, Docker, and FM
-- ✅ Auto-discover FM stacks
+- ✅ Auto-discover FM stacks using `fm list`
 - ✅ Generate secure secrets
 - ✅ Create configuration
 - ✅ Install dependencies
@@ -118,15 +136,12 @@ security:
     - get_stack_status
 
 stacks:
-  prod:
-    path: /opt/fm/prod  # CHANGE to your FM stack path
-    type: fm
-  dev:
-    path: /opt/fm/dev   # CHANGE to your FM stack path
+  frappe:
+    path: /home/baron/frappe  # FM Stack Root
     type: fm
 
 backups:
-  base_path: /backups  # CHANGE to your backup directory
+  base_path: /backups
   retention_days: 30
 
 dashboard:
@@ -245,6 +260,13 @@ sudo journalctl -u fm-dashboard -f
 2. Navigate to: `https://dashboard.example.com`
 3. Login with credentials from `config.yaml`
 
+### Navigation Menu
+
+- **Dashboard** - Main overview of all stacks
+- **Site Logs** - View logs for FM sites
+- **System Logs** - View logs for Dashboard and Agent services
+- **Scheduler** - Manage scheduled backups
+
 ### Managing Stacks
 
 1. **View Stacks**: Main dashboard shows all configured stacks
@@ -255,11 +277,47 @@ sudo journalctl -u fm-dashboard -f
 ### Managing Sites
 
 1. Navigate to a stack's detail page
-2. For each site you can:
+2. **Refresh Sites**: Click "Refresh Sites" to update site list
+3. For each site you can:
    - **Restart**: Restart the backend container
-   - **Migrate**: Run bench migrate
-   - **Backup**: Create immediate backup
+   - **Migrate**: Run `fm shell <site> -c "bench migrate"`
+   - **Backup**: Create immediate backup using `fm shell`
    - **View Backups**: See all available backups
+   - **Logs**: View site logs using `fm logs`
+   - **Files**: Browse and edit site files
+   - **Console**: Get `fm shell` command
+
+### Site Information
+
+Each site displays:
+- **Status**: Active/Inactive (from `fm list`)
+- **Path**: Full path to the site (from `fm list`)
+
+### Viewing Site Logs
+
+1. Go to **Site Logs** in navigation
+2. Select Stack and Site
+3. Choose number of lines (50-1000)
+4. View logs in terminal-style display
+5. Use Auto Refresh for real-time monitoring
+6. Download logs as text file
+
+### Viewing System Logs
+
+1. Go to **System Logs** in navigation
+2. Select Service (Dashboard or Agent)
+3. Choose number of lines
+4. View service logs from journalctl
+5. Use Auto Refresh for real-time monitoring
+6. Download logs as text file
+
+### File Browser
+
+1. Navigate to a site's detail page
+2. Click **Files** button
+3. Browse directories and files
+4. View file contents
+5. Edit files (coming soon)
 
 ### Scheduling Backups
 
@@ -277,6 +335,38 @@ sudo journalctl -u fm-dashboard -f
 1. Navigate to a site's backup page
 2. Click "Download" on any backup file
 3. Backup will download as `.sql.gz` file
+
+## 🔄 FM Commands Integration
+
+The dashboard uses **Frappe Manager commands** directly:
+
+### Commands Used
+
+| Operation | FM Command |
+|-----------|------------|
+| List Sites | `fm list` |
+| Site Logs | `fm logs <site> --tail=100` |
+| Migrate | `fm shell <site> -c "bench --site <site> migrate"` |
+| Backup | `fm shell <site> -c "bench --site <site> backup"` |
+| Console | `fm shell <site>` |
+
+### FM Structure Support
+
+The dashboard understands FM structure:
+
+```
+/home/baron/frappe/                    ← Stack Root
+├── fm_config.toml
+├── services/
+└── sites/
+    └── devsite.mby-solution.vip/      ← Bench
+        ├── bench_config.toml
+        ├── docker-compose.yml
+        └── workspace/
+            └── frappe-bench/
+                └── sites/
+                    └── devsite.mby-solution.vip/  ← Actual Site
+```
 
 ## 🔐 Security Best Practices
 
@@ -314,8 +404,14 @@ dash/
 │       ├── login.html
 │       ├── dashboard.html
 │       ├── stack_detail.html
+│       ├── sites_list_partial.html
 │       ├── backups.html
 │       ├── scheduler.html
+│       ├── logs_viewer.html
+│       ├── system_logs.html
+│       ├── site_logs.html
+│       ├── site_files.html
+│       ├── site_console.html
 │       └── error.html
 ├── systemd/
 │   ├── fm-agent.service     # Agent systemd service
@@ -357,6 +453,22 @@ docker ps
 
 # Verify FM is installed
 fm --version
+
+# Test fm commands
+fm list
+```
+
+### Sites Not Showing
+
+```bash
+# Verify fm list works
+fm list
+
+# Check stack path in config.yaml
+cat config.yaml | grep -A 5 stacks
+
+# Verify FM structure
+ls -la /home/baron/frappe/sites/
 ```
 
 ### Backup Fails
@@ -370,6 +482,9 @@ sudo chown -R $USER:$USER /backups
 
 # Check disk space
 df -h
+
+# Test fm shell
+fm shell <site> -c "bench --site <site> backup"
 ```
 
 ### Can't Connect to Agent
@@ -383,6 +498,18 @@ sudo netstat -tulpn | grep 9100
 
 # Verify token matches in config
 cat config.yaml | grep token
+```
+
+### Logs Not Showing
+
+```bash
+# Check journalctl access
+sudo journalctl -u fm-dashboard -n 10
+sudo journalctl -u fm-agent -n 10
+
+# Check log files
+ls -la /var/log/fm-*.log
+ls -la /tmp/fm-*.log
 ```
 
 ## 📊 Logs
@@ -402,6 +529,11 @@ sudo tail -f /var/log/nginx/fm-dashboard-access.log
 # Nginx error logs
 sudo tail -f /var/log/nginx/fm-dashboard-error.log
 ```
+
+### View Logs in Dashboard
+
+1. **Site Logs**: Navigation → Site Logs
+2. **System Logs**: Navigation → System Logs
 
 ## 🔄 Updating
 
@@ -442,6 +574,47 @@ uvicorn agent.main:app --reload --host 127.0.0.1 --port 9100
 uvicorn dashboard.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
+## 📚 API Endpoints
+
+### Agent Service (localhost:9100)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Health check |
+| `/stacks` | GET | List all stacks |
+| `/stacks/{stack}` | GET | Get stack details |
+| `/stacks/{stack}/sites` | GET | List sites in stack |
+| `/action` | POST | Execute action |
+| `/site/{stack}/{site}/logs` | GET | Get site logs |
+| `/site/{stack}/{site}/files` | GET | List site files |
+| `/site/{stack}/{site}/console` | GET | Get console command |
+| `/site/{stack}/{site}/file/read` | GET | Read file content |
+| `/site/{stack}/{site}/file/write` | POST | Write file content |
+| `/backups/{stack}/{site}` | GET | List backups |
+| `/backups/{stack}/{site}/{filename}` | GET | Download backup |
+| `/system/logs` | GET | Get agent service logs |
+
+### Dashboard Service (localhost:8000)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/login` | GET/POST | Login page |
+| `/dashboard` | GET | Main dashboard |
+| `/stack/{stack}` | GET | Stack detail page |
+| `/stack/{stack}/refresh-sites` | GET | Refresh sites list |
+| `/stack/{stack}/restart` | POST | Restart stack |
+| `/stack/{stack}/update` | POST | Update stack |
+| `/site/{stack}/{site}/restart` | POST | Restart site |
+| `/site/{stack}/{site}/migrate` | POST | Migrate site |
+| `/site/{stack}/{site}/backup` | POST | Backup site |
+| `/backups/{stack}/{site}` | GET | Backups page |
+| `/download/{stack}/{site}/{filename}` | GET | Download backup |
+| `/logs-viewer` | GET | Site logs viewer |
+| `/system-logs` | GET | System logs viewer |
+| `/scheduler` | GET | Scheduler page |
+| `/scheduler/add` | POST | Add scheduled backup |
+| `/scheduler/remove/{job_id}` | POST | Remove scheduled backup |
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
@@ -461,6 +634,7 @@ For issues and questions:
 2. Review logs for errors
 3. Ensure all prerequisites are met
 4. Verify configuration is correct
+5. Check FM commands work: `fm list`, `fm shell <site>`
 
 ## 🚧 Future Enhancements (Not Implemented)
 
@@ -473,11 +647,47 @@ For issues and questions:
 - Backup retention policies
 - Site creation/deletion
 - App installation management
+- Interactive web terminal
+- Real-time log streaming
+- File editor with syntax highlighting
 
 ## 📚 References
 
-- [Frappe Manager Documentation](https://github.com/rtcamp/Frappe-Manager)
+- [Frappe Manager Documentation](https://github.com/rtCamp/Frappe-Manager/wiki)
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)
 - [Docker Documentation](https://docs.docker.com/)
 - [Nginx Documentation](https://nginx.org/en/docs/)
 
+---
+
+## 📝 Changelog
+
+### Version 1.0.0
+
+#### New Features
+- ✅ FM Commands Integration (`fm list`, `fm shell`, `fm logs`)
+- ✅ Site Status Display (Active/Inactive)
+- ✅ Site Path Display
+- ✅ Site Logs Viewer
+- ✅ System Logs Viewer (Dashboard & Agent)
+- ✅ File Browser
+- ✅ Console Access Commands
+- ✅ Refresh Sites Button
+- ✅ Auto-refresh for logs
+- ✅ Download logs as files
+
+#### Fixes
+- ✅ Fixed site name parsing from `fm list`
+- ✅ Fixed FM structure understanding
+- ✅ Fixed container name discovery
+- ✅ Fixed file listing template error
+
+#### Improvements
+- ✅ Better error handling
+- ✅ Improved logging
+- ✅ Enhanced UI/UX
+- ✅ Better documentation
+
+---
+
+**Made with ❤️ for Frappe Manager users**

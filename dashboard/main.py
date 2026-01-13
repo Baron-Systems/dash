@@ -5,6 +5,7 @@ Provides UI for managing stacks, sites, backups, and scheduling
 import os
 import yaml
 import httpx
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import FastAPI, Request, Depends, HTTPException, Form, status
@@ -559,7 +560,7 @@ async def logs_viewer_page(
     lines: int = 100,
     user: str = Depends(require_auth)
 ):
-    """Logs viewer page"""
+    """Logs viewer page for FM sites"""
     try:
         from datetime import datetime
         
@@ -572,7 +573,12 @@ async def logs_viewer_page(
         if stack:
             try:
                 stack_data = await call_agent("GET", f"/stacks/{stack}")
-                sites = stack_data.get("sites", [])
+                sites_data = stack_data.get("sites", [])
+                # Handle both dict and string formats
+                if sites_data and isinstance(sites_data[0], dict):
+                    sites = [s["name"] for s in sites_data]
+                else:
+                    sites = sites_data
             except:
                 sites = []
         
@@ -609,6 +615,79 @@ async def logs_viewer_page(
                 "request": request,
                 "user": user,
                 "error": f"Failed to load logs viewer: {str(e)}"
+            }
+        )
+
+
+@app.get("/system-logs", response_class=HTMLResponse)
+async def system_logs_page(
+    request: Request,
+    service: str = "dashboard",
+    lines: int = 100,
+    user: str = Depends(require_auth)
+):
+    """System logs page for Dashboard and Agent services"""
+    try:
+        from datetime import datetime
+        import subprocess
+        
+        logs = None
+        source = "none"
+        
+        if service == "dashboard":
+            # Get dashboard logs from journalctl
+            try:
+                result = subprocess.run(
+                    ["journalctl", "-u", "fm-dashboard", "-n", str(lines), "--no-pager"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    logs = result.stdout
+                    source = "journalctl"
+            except Exception as e:
+                logger.error(f"Error getting dashboard logs: {e}")
+                # Fallback to log file
+                log_file = Path("/var/log/fm-dashboard.log")
+                if not log_file.exists():
+                    log_file = Path("/tmp/fm-dashboard.log")
+                if log_file.exists():
+                    with open(log_file, 'r') as f:
+                        all_lines = f.readlines()
+                        logs = ''.join(all_lines[-lines:])
+                        source = "log_file"
+        
+        elif service == "agent":
+            # Get agent logs via API
+            try:
+                result = await call_agent("GET", f"/system/logs?lines={lines}")
+                if result.get("success"):
+                    logs = result.get("data", {}).get("logs", "")
+                    source = result.get("data", {}).get("source", "unknown")
+            except Exception as e:
+                logger.error(f"Error getting agent logs: {e}")
+        
+        return templates.TemplateResponse(
+            "system_logs.html",
+            {
+                "request": request,
+                "user": user,
+                "service": service,
+                "lines": lines,
+                "logs": logs,
+                "source": source,
+                "current_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+        )
+    except Exception as e:
+        logger.error(f"System logs page error: {e}")
+        return templates.TemplateResponse(
+            "error.html",
+            {
+                "request": request,
+                "user": user,
+                "error": f"Failed to load system logs: {str(e)}"
             }
         )
 
