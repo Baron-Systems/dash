@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Error - FM Dashboard{% endblock %}
+
+{% block content %}
+<div class="px-4 py-6 sm:px-0">
+    <div class="max-w-2xl mx-auto">
+        <div class="bg-red-50 border-l-4 border-red-500 p-6 rounded-lg">
+            <div class="flex items-center mb-4">
+                <i class="fas fa-exclamation-circle text-red-500 text-4xl mr-4"></i>
+                <h1 class="text-2xl font-bold text-red-800">Error</h1>
+            </div>
+            <p class="text-red-700 mb-6">{{ error }}</p>
+            <a href="/dashboard" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg inline-flex items-center transition-colors">
+                <i class="fas fa-home mr-2"></i>Back to Dashboard
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

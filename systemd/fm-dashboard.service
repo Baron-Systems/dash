@@ -1,0 +1,30 @@
+[Unit]
+Description=FM Dashboard Web Service
+After=network.target fm-agent.service
+Wants=fm-agent.service
+
+[Service]
+Type=simple
+User=manager-pc
+Group=manager-pc
+WorkingDirectory=/home/manager-pc/Desktop/dash
+Environment="CONFIG_PATH=/home/manager-pc/Desktop/dash/config.yaml"
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+
+ExecStart=/usr/bin/python3 -m uvicorn dashboard.main:app --host 127.0.0.1 --port 8000
+
+Restart=always
+RestartSec=5
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fm-dashboard
+
+[Install]
+WantedBy=multi-user.target
+

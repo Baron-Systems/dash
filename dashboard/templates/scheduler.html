@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+
+{% block title %}Scheduler - FM Dashboard{% endblock %}
+
+{% block content %}
+<div class="px-4 py-6 sm:px-0">
+    <!-- Header -->
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold text-gray-900">
+            <i class="fas fa-clock mr-3"></i>Backup Scheduler
+        </h1>
+        <p class="mt-2 text-gray-600">Schedule automatic backups for your sites</p>
+    </div>
+    
+    <!-- Add New Schedule -->
+    <div class="bg-white shadow-lg rounded-lg p-6 mb-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">
+            <i class="fas fa-plus-circle mr-2"></i>Add New Scheduled Backup
+        </h2>
+        
+        <form hx-post="/scheduler/add" hx-trigger="submit" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label for="stack_name" class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-layer-group mr-1"></i>Stack
+                    </label>
+                    <select id="stack_name" name="stack_name" required
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            onchange="loadSites(this.value)">
+                        <option value="">Select Stack</option>
+                        {% for stack in stacks %}
+                        <option value="{{ stack.name }}">{{ stack.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div>
+                    <label for="site_name" class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-globe mr-1"></i>Site
+                    </label>
+                    <select id="site_name" name="site_name" required
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">Select Site</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label for="schedule_type" class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-calendar-alt mr-1"></i>Schedule Type
+                    </label>
+                    <select id="schedule_type" name="schedule_type" required
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            onchange="toggleDayOfWeek(this.value)">
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                    </select>
+                </div>
+                
+                <div id="day_of_week_container" style="display: none;">
+                    <label for="day_of_week" class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-calendar-day mr-1"></i>Day of Week
+                    </label>
+                    <select id="day_of_week" name="day_of_week"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="0">Monday</option>
+                        <option value="1">Tuesday</option>
+                        <option value="2">Wednesday</option>
+                        <option value="3">Thursday</option>
+                        <option value="4">Friday</option>
+                        <option value="5">Saturday</option>
+                        <option value="6">Sunday</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label for="hour" class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-clock mr-1"></i>Hour (24h)
+                    </label>
+                    <input type="number" id="hour" name="hour" min="0" max="23" value="2" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                
+                <div>
+                    <label for="minute" class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-clock mr-1"></i>Minute
+                    </label>
+                    <input type="number" id="minute" name="minute" min="0" max="59" value="0" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+            
+            <div>
+                <button type="submit" 
+                        class="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium transition-colors">
+                    <i class="fas fa-plus mr-2"></i>Add Schedule
+                </button>
+            </div>
+        </form>
+    </div>
+    
+    <!-- Existing Schedules -->
+    <div class="bg-white shadow-lg rounded-lg p-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">
+            <i class="fas fa-list mr-2"></i>Scheduled Backups ({{ jobs|length }})
+        </h2>
+        
+        {% if jobs %}
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <i class="fas fa-tag mr-1"></i>Job Name
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <i class="fas fa-clock mr-1"></i>Schedule
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <i class="fas fa-calendar-check mr-1"></i>Next Run
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <i class="fas fa-cog mr-1"></i>Actions
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for job in jobs %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            <i class="fas fa-clock text-blue-600 mr-2"></i>{{ job.name }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {{ job.trigger }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {% if job.next_run %}
+                                {{ job.next_run.split('T')[0] }} {{ job.next_run.split('T')[1].split('.')[0] if 'T' in job.next_run else '' }}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm">
+                            <button hx-post="/scheduler/remove/{{ job.id }}" 
+                                    hx-trigger="click"
+                                    onclick="return confirmAction(event, 'Remove this scheduled backup?')"
+                                    class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded transition-colors">
+                                <i class="fas fa-trash mr-1"></i>Remove
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-12">
+            <i class="fas fa-calendar-times text-gray-400 text-6xl mb-4"></i>
+            <h3 class="text-xl font-semibold text-gray-700 mb-2">No Scheduled Backups</h3>
+            <p class="text-gray-600">Create your first scheduled backup using the form above.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    // Load sites for selected stack
+    async function loadSites(stackName) {
+        const siteSelect = document.getElementById('site_name');
+        siteSelect.innerHTML = '<option value="">Loading...</option>';
+        
+        if (!stackName) {
+            siteSelect.innerHTML = '<option value="">Select Site</option>';
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/stack/${stackName}`);
+            const data = await response.json();
+            
+            siteSelect.innerHTML = '<option value="">Select Site</option>';
+            if (data.sites && data.sites.length > 0) {
+                data.sites.forEach(site => {
+                    const option = document.createElement('option');
+                    option.value = site;
+                    option.textContent = site;
+                    siteSelect.appendChild(option);
+                });
+            }
+        } catch (error) {
+            console.error('Error loading sites:', error);
+            siteSelect.innerHTML = '<option value="">Error loading sites</option>';
+        }
+    }
+    
+    // Toggle day of week field
+    function toggleDayOfWeek(scheduleType) {
+        const dayOfWeekContainer = document.getElementById('day_of_week_container');
+        if (scheduleType === 'weekly') {
+            dayOfWeekContainer.style.display = 'block';
+        } else {
+            dayOfWeekContainer.style.display = 'none';
+        }
+    }
+</script>
+{% endblock %}
+

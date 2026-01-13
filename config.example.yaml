@@ -1,0 +1,46 @@
+# FM Dashboard Configuration Example
+# Copy this file to config.yaml and customize
+
+agent:
+  name: host-01
+  listen: 127.0.0.1
+  port: 9100
+
+security:
+  # Generate with: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+  token: CHANGE_THIS_SECRET_TOKEN_IN_PRODUCTION
+  allowed_actions:
+    - restart_stack
+    - restart_site
+    - migrate_site
+    - backup_site
+    - update_stack
+    - list_sites
+    - get_stack_status
+
+stacks:
+  # Example stack configuration
+  # Replace with your actual FM stack paths
+  prod:
+    path: /opt/fm/prod
+    type: fm
+  dev:
+    path: /opt/fm/dev
+    type: fm
+  # Add more stacks as needed
+  # staging:
+  #   path: /opt/fm/staging
+  #   type: fm
+
+backups:
+  base_path: /backups
+  retention_days: 30
+
+dashboard:
+  listen: 127.0.0.1
+  port: 8000
+  # Generate with: python3 -c "import secrets; print(secrets.token_hex(32))"
+  secret_key: CHANGE_THIS_SECRET_KEY_IN_PRODUCTION
+  admin_username: admin
+  admin_password: admin123  # CHANGE THIS IMMEDIATELY!
+

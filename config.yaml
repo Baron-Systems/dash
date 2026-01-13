@@ -1,0 +1,35 @@
+agent:
+  name: host-01
+  listen: 127.0.0.1
+  port: 9100
+
+security:
+  token: CHANGE_THIS_SECRET_TOKEN_IN_PRODUCTION
+  allowed_actions:
+    - restart_stack
+    - restart_site
+    - migrate_site
+    - backup_site
+    - update_stack
+    - list_sites
+    - get_stack_status
+
+stacks:
+  prod:
+    path: /opt/fm/prod
+    type: fm
+  dev:
+    path: /opt/fm/dev
+    type: fm
+
+backups:
+  base_path: /backups
+  retention_days: 30
+
+dashboard:
+  listen: 127.0.0.1
+  port: 8000
+  secret_key: CHANGE_THIS_SECRET_KEY_IN_PRODUCTION
+  admin_username: admin
+  admin_password: admin123  # Change this in production!
+

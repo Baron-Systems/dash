@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}FM Dashboard{% endblock %}</title>
+    
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        .loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        
+        .notification {
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    {% if user %}
+    <!-- Navigation -->
+    <nav class="bg-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <i class="fas fa-server text-blue-600 text-2xl mr-2"></i>
+                        <span class="text-xl font-bold text-gray-800">FM Dashboard</span>
+                    </div>
+                    <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
+                        <a href="/dashboard" class="border-blue-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                            <i class="fas fa-home mr-2"></i> Dashboard
+                        </a>
+                        <a href="/scheduler" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                            <i class="fas fa-clock mr-2"></i> Scheduler
+                        </a>
+                    </div>
+                </div>
+                <div class="flex items-center">
+                    <span class="text-gray-700 mr-4">
+                        <i class="fas fa-user mr-2"></i>{{ user }}
+                    </span>
+                    <a href="/logout" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium">
+                        <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+    
+    <!-- Main Content -->
+    <main class="{% if user %}max-w-7xl mx-auto py-6 sm:px-6 lg:px-8{% endif %}">
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Notification Area -->
+    <div id="notifications" class="fixed top-20 right-4 z-50 space-y-2"></div>
+    
+    <script>
+        // Show notification
+        function showNotification(message, type = 'info') {
+            const colors = {
+                'success': 'bg-green-500',
+                'error': 'bg-red-500',
+                'info': 'bg-blue-500',
+                'warning': 'bg-yellow-500'
+            };
+            
+            const notification = document.createElement('div');
+            notification.className = `notification ${colors[type]} text-white px-6 py-4 rounded-lg shadow-lg max-w-sm`;
+            notification.innerHTML = `
+                <div class="flex items-center">
+                    <span>${message}</span>
+                    <button onclick="this.parentElement.parentElement.remove()" class="ml-4 text-white hover:text-gray-200">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+            
+            document.getElementById('notifications').appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 5000);
+        }
+        
+        // Handle HTMX responses
+        document.body.addEventListener('htmx:afterRequest', function(event) {
+            if (event.detail.xhr.status === 200) {
+                try {
+                    const response = JSON.parse(event.detail.xhr.responseText);
+                    if (response.success !== undefined) {
+                        showNotification(response.message, response.success ? 'success' : 'error');
+                        
+                        // Reload page on success for certain actions
+                        if (response.success && event.detail.requestConfig.path.includes('/restart') || 
+                            event.detail.requestConfig.path.includes('/update') ||
+                            event.detail.requestConfig.path.includes('/backup')) {
+                            setTimeout(() => {
+                                location.reload();
+                            }, 1500);
+                        }
+                    }
+                } catch (e) {
+                    // Not JSON response, ignore
+                }
+            } else {
+                showNotification('Request failed', 'error');
+            }
+        });
+        
+        // Confirm dialogs for destructive actions
+        function confirmAction(event, message) {
+            if (!confirm(message)) {
+                event.preventDefault();
+                return false;
+            }
+            return true;
+        }
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,30 @@
+[Unit]
+Description=FM Agent Service
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=manager-pc
+Group=docker
+WorkingDirectory=/home/manager-pc/Desktop/dash
+Environment="CONFIG_PATH=/home/manager-pc/Desktop/dash/config.yaml"
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+
+ExecStart=/usr/bin/python3 -m uvicorn agent.main:app --host 127.0.0.1 --port 9100
+
+Restart=always
+RestartSec=5
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fm-agent
+
+[Install]
+WantedBy=multi-user.target
+
