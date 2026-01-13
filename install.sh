@@ -83,39 +83,92 @@ echo -e "${BLUE}🔍 Auto-discovering FM stacks...${NC}"
 FOUND_STACKS=()
 STACK_PATHS=()
 
-# Common locations to search
-SEARCH_PATHS=(
-    "$HOME"
-    "/opt"
-    "/home"
-    "/srv"
-)
-
-for search_path in "${SEARCH_PATHS[@]}"; do
-    if [ -d "$search_path" ]; then
-        # Look for frappe-bench directories
-        while IFS= read -r -d '' bench_path; do
-            # Check if it's a valid FM/Frappe bench
-            if [ -f "$bench_path/sites/common_site_config.json" ] || [ -f "$bench_path/docker-compose.yml" ]; then
-                stack_name=$(basename $(dirname "$bench_path") 2>/dev/null || basename "$bench_path")
-                echo -e "${GREEN}   ✓ Found: $bench_path${NC}"
-                FOUND_STACKS+=("$stack_name")
-                STACK_PATHS+=("$bench_path")
-            fi
-        done < <(find "$search_path" -maxdepth 3 -type d -name "frappe-bench" -o -name "*-bench" 2>/dev/null | head -10)
-    fi
-done
-
-# Look for FM managed stacks
+# Method 1: Use fm list command directly
 if command -v fm &> /dev/null; then
+    echo -e "${BLUE}   Using 'fm list' to discover sites...${NC}"
+    
+    # Get fm sites
+    FM_OUTPUT=$(fm list 2>/dev/null || true)
+    
+    if [ ! -z "$FM_OUTPUT" ]; then
+        # Parse fm list output to get site paths
+        while IFS= read -r line; do
+            # Extract path from lines like: │ site.example.com │ Status │ /path/to/site │
+            if [[ "$line" =~ │[[:space:]]*([^│]+)[[:space:]]*│[[:space:]]*([^│]+)[[:space:]]*│[[:space:]]*(/[^│]+)[[:space:]]*│ ]]; then
+                site_name="${BASH_REMATCH[1]}"
+                site_path="${BASH_REMATCH[3]}"
+                
+                # Clean up whitespace
+                site_name=$(echo "$site_name" | xargs)
+                site_path=$(echo "$site_path" | xargs)
+                
+                if [ ! -z "$site_path" ] && [ -d "$site_path" ]; then
+                    # Get the parent frappe directory (usually /home/user/frappe)
+                    frappe_dir=$(dirname "$site_path")
+                    frappe_dir=$(dirname "$frappe_dir")  # Go up one more level from sites
+                    
+                    # Use frappe directory as stack path
+                    if [ -d "$frappe_dir" ]; then
+                        # Create a unique stack name
+                        stack_name=$(basename "$frappe_dir")
+                        
+                        # Check if already added
+                        if [[ ! " ${STACK_PATHS[@]} " =~ " ${frappe_dir} " ]]; then
+                            echo -e "${GREEN}   ✓ Found FM site: $site_name${NC}"
+                            echo -e "${GREEN}      Stack path: $frappe_dir${NC}"
+                            FOUND_STACKS+=("$stack_name")
+                            STACK_PATHS+=("$frappe_dir")
+                        fi
+                    fi
+                fi
+            fi
+        done <<< "$FM_OUTPUT"
+    fi
+fi
+
+# Method 2: Look for frappe-bench directories
+if [ ${#FOUND_STACKS[@]} -eq 0 ]; then
+    echo -e "${BLUE}   Searching for frappe-bench directories...${NC}"
+    
+    SEARCH_PATHS=(
+        "$HOME"
+        "/opt"
+        "/home"
+        "/srv"
+    )
+    
+    for search_path in "${SEARCH_PATHS[@]}"; do
+        if [ -d "$search_path" ]; then
+            while IFS= read -r -d '' bench_path; do
+                # Check if it's a valid FM/Frappe bench
+                if [ -f "$bench_path/sites/common_site_config.json" ] || [ -d "$bench_path/sites" ]; then
+                    # Get parent directory as stack name
+                    stack_dir=$(dirname "$bench_path")
+                    stack_name=$(basename "$stack_dir")
+                    
+                    if [[ ! " ${STACK_PATHS[@]} " =~ " ${stack_dir} " ]]; then
+                        echo -e "${GREEN}   ✓ Found bench: $bench_path${NC}"
+                        FOUND_STACKS+=("$stack_name")
+                        STACK_PATHS+=("$stack_dir")
+                    fi
+                fi
+            done < <(find "$search_path" -maxdepth 3 -type d \( -name "frappe-bench" -o -name "*-bench" \) 2>/dev/null | head -10)
+        fi
+    done
+fi
+
+# Method 3: Look for FM workspace directories
+if [ ${#FOUND_STACKS[@]} -eq 0 ] && command -v fm &> /dev/null; then
+    echo -e "${BLUE}   Searching for FM workspace directories...${NC}"
+    
     FM_HOME="$HOME/.frappe"
     if [ -d "$FM_HOME" ]; then
         while IFS= read -r -d '' fm_stack; do
             stack_name=$(basename "$fm_stack")
             if [ -d "$fm_stack/workspace" ]; then
                 bench_path="$fm_stack/workspace/frappe-bench"
-                if [ -d "$bench_path" ]; then
-                    echo -e "${GREEN}   ✓ Found FM stack: $fm_stack${NC}"
+                if [ -d "$bench_path" ] || [ -d "$fm_stack/workspace" ]; then
+                    echo -e "${GREEN}   ✓ Found FM workspace: $fm_stack${NC}"
                     FOUND_STACKS+=("$stack_name")
                     STACK_PATHS+=("$fm_stack")
                 fi
@@ -127,6 +180,7 @@ fi
 if [ ${#FOUND_STACKS[@]} -eq 0 ]; then
     echo -e "${YELLOW}   ⚠ No FM stacks found automatically${NC}"
     echo -e "${YELLOW}   Will create example configuration${NC}"
+    echo -e "${YELLOW}   You can manually edit config.yaml after installation${NC}"
 fi
 
 echo ""
